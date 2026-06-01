@@ -1,9 +1,11 @@
 use ratatui::{DefaultTerminal, Frame};
 
-pub fn app(terminal: &mut DefaultTerminal, path: &str) -> std::io::Result<()> {
+use crate::notes::Data;
+
+pub fn app(terminal: &mut DefaultTerminal, data: Data) -> std::io::Result<()> {
     loop {
         terminal.draw(|f| {
-            render(f, path);
+            render(f, &data);
         })?;
         if crossterm::event::read()?.is_key_press() {
             break Ok(());
@@ -11,6 +13,10 @@ pub fn app(terminal: &mut DefaultTerminal, path: &str) -> std::io::Result<()> {
     }
 }
 
-fn render(frame: &mut Frame, path: &str) {
-    frame.render_widget(path, frame.area());
+fn render(frame: &mut Frame, data: &Data) {
+    if data.notes.len() == 0 {
+        frame.render_widget("Nothing to see here...", frame.area());
+    } else {
+        frame.render_widget("There are notes!", frame.area());
+    }
 }
