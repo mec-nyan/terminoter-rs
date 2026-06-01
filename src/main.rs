@@ -1,41 +1,15 @@
-use std::path::PathBuf;
+mod app;
+mod args;
 
-use clap::Parser;
-use ratatui::{DefaultTerminal, Frame};
-
-#[derive(Parser)]
-#[command(version, about, long_about = None)]
-struct Options {
-    // Optional file to read/write our notes.
-    file: Option<PathBuf>,
-}
-
-fn parse_args() -> Options {
-    return Options::parse();
-}
+use crate::{app::app, args::parse_args};
 
 fn main() -> std::io::Result<()> {
     // Parse args + initial setup?
     //
     let opts = parse_args();
 
-    let path = opts.file.unwrap_or_default();
+    let path = opts.file.unwrap_or("a file".into());
 
-    ratatui::run(|t| app(t, path.to_str().unwrap().to_string()))?;
+    ratatui::run(|t| app(t, path.to_str().unwrap()))?;
     Ok(())
-}
-
-fn app(terminal: &mut DefaultTerminal, path: String) -> std::io::Result<()> {
-    loop {
-        terminal.draw(|f| {
-            render(f, path.clone());
-        })?;
-        if crossterm::event::read()?.is_key_press() {
-            break Ok(());
-        }
-    }
-}
-
-fn render(frame: &mut Frame, path: String) {
-    frame.render_widget(path, frame.area());
 }
