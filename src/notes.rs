@@ -2,9 +2,9 @@ use std::fs;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
-    content: String,
+    pub content: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
