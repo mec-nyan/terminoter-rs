@@ -69,7 +69,18 @@ impl App {
         frame.render_widget(title, rows[0]);
 
         if self.data.notes.is_empty() {
-            frame.render_widget("Nothing to see here ...", rects[0][0]);
+            // TODO: Show a help message here.
+            let p = Paragraph::new("There are no notes ...")
+                .block(
+                    Block::new()
+                        .borders(Borders::ALL)
+                        .border_type(ratatui::widgets::BorderType::Rounded)
+                        .padding(Padding::proportional(1)),
+                )
+                .style(Style::new().dark_gray())
+                .wrap(Wrap { trim: true });
+
+            frame.render_widget(p, rects[0][0]);
         } else {
             for i in 0..self.data.notes.len() {
                 // TODO: Don't use magic numbers!
