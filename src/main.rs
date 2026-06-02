@@ -2,7 +2,7 @@ mod app;
 mod args;
 mod notes;
 
-use crate::{app::app, args::parse_args, notes::load_data};
+use crate::{app::App, args::parse_args, notes::load_data};
 
 fn main() -> std::io::Result<()> {
     // Parse args + initial setup?
@@ -11,6 +11,6 @@ fn main() -> std::io::Result<()> {
 
     let data = load_data(&file_path).expect("Oops!");
 
-    ratatui::run(|t| app(t, data))?;
+    ratatui::run(|t| App::new(data).run(t))?;
     Ok(())
 }
