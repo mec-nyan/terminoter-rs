@@ -19,46 +19,58 @@ pub fn app(terminal: &mut DefaultTerminal, data: Data) -> std::io::Result<()> {
 }
 
 fn render(frame: &mut Frame, data: &Data) {
-    let main_pane = frame.area();
-
-    let layout = Layout::new(
+    let rows = Layout::new(
         ratatui::layout::Direction::Vertical,
         vec![
-            Constraint::Length(3), // Title.
-            Constraint::Fill(1),   // Notes.
+            Constraint::Length(2), // App title.
+            // TODO: Don't use magic numbers!
+            Constraint::Fill(1), // rows...
+            Constraint::Fill(1),
+            Constraint::Fill(1),
+            Constraint::Fill(1),
         ],
     )
-    .split(main_pane);
+    // .spacing(1)
+    .horizontal_margin(1)
+    .split(frame.area());
 
-    let title = Paragraph::new("== Notes ==")
-        .block(Block::new().padding(Padding::uniform(1)))
-        .centered();
+    let mut rects = Vec::new();
 
-    frame.render_widget(title, layout[0]);
+    // TODO: Don't use magic numbers!
+    for i in 1..5 {
+        let columns = Layout::new(
+            ratatui::layout::Direction::Horizontal,
+            vec![Constraint::Fill(1); 3],
+        )
+        .spacing(1)
+        .split(rows[i]);
+        rects.push(columns);
+    }
+
+    let title = Paragraph::new(" Notes ✨").style(Style::new().yellow());
+
+    frame.render_widget(title, rows[0]);
 
     if data.notes.is_empty() {
-        frame.render_widget("Nothing to see here ...", layout[1]);
+        frame.render_widget("Nothing to see here ...", rects[0][0]);
     } else {
-        let constraints: Vec<Constraint> = vec![Constraint::Min(0); data.notes.len() + 1];
-        let layout =
-            Layout::new(ratatui::layout::Direction::Vertical, constraints).split(layout[1]);
-
         for i in 0..data.notes.len() {
+            // TODO: Don't use magic numbers!
+            let y = i / 3;
+            let x = i - (y * 3);
+
             let p = Paragraph::new(data.notes[i].content.clone())
                 .block(
                     Block::new()
-                        .padding(Padding {
-                            left: 1,
-                            right: 1,
-                            top: 0,
-                            bottom: 1,
-                        })
                         .borders(Borders::ALL)
-                        .border_type(ratatui::widgets::BorderType::Rounded),
+                        .border_type(ratatui::widgets::BorderType::Rounded)
+                        .padding(Padding::proportional(1))
+                        .title(format!(" #{} ({},{}) ", i + 1, x, y)),
                 )
                 .style(Style::new().yellow())
                 .wrap(Wrap { trim: true });
-            frame.render_widget(p, layout[i]);
+
+            frame.render_widget(p, rects[y][x]);
         }
     }
 }
