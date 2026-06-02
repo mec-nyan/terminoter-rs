@@ -1,3 +1,4 @@
+use crossterm::event::{self, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Layout},
@@ -9,8 +10,8 @@ use crate::notes::Data;
 
 pub struct App {
     data: Data,
-    current_note: u16,
-    current_page: u16,
+    current_note: usize,
+    _current_page: usize,
     quit: bool,
 }
 
@@ -19,19 +20,52 @@ impl App {
         return Self {
             data,
             current_note: 0,
-            current_page: 0,
+            _current_page: 0,
             quit: false,
         };
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> std::io::Result<()> {
-        loop {
+        while !self.quit {
             terminal.draw(|f| {
                 self.render(f);
             })?;
-            if crossterm::event::read()?.is_key_press() {
-                break Ok(());
+            // For our usecase, blocking I/O is just what we need.
+            self.handle_events()?;
+        }
+        Ok(())
+    }
+
+    fn handle_events(&mut self) -> std::io::Result<()> {
+        match event::read()? {
+            event::Event::Key(key_ev) if key_ev.kind == KeyEventKind::Press => {
+                self.handle_keys(key_ev);
             }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_keys(&mut self, ev: KeyEvent) {
+        match ev.code {
+            event::KeyCode::Char('q') | event::KeyCode::Esc => self.quit = true,
+            event::KeyCode::Char('j') => self.next(),
+            event::KeyCode::Char('k') => self.previous(),
+            _ => {}
+        }
+    }
+
+    fn next(&mut self) {
+        if !self.data.notes.is_empty() {
+            if self.current_note < self.data.notes.len() - 1 {
+                self.current_note += 1;
+            }
+        }
+    }
+
+    fn previous(&mut self) {
+        if self.current_note > 0 {
+            self.current_note -= 1;
         }
     }
 
@@ -87,6 +121,12 @@ impl App {
                 let y = i / 3;
                 let x = i - (y * 3);
 
+                let note_style = if i == self.current_note {
+                    Style::new().yellow()
+                } else {
+                    Style::new().blue()
+                };
+
                 let p = Paragraph::new(self.data.notes[i].content.clone())
                     .block(
                         Block::new()
@@ -95,7 +135,7 @@ impl App {
                             .padding(Padding::proportional(1))
                             .title(format!(" #{} ({},{}) ", i + 1, x, y)),
                     )
-                    .style(Style::new().yellow())
+                    .style(note_style)
                     .wrap(Wrap { trim: true });
 
                 frame.render_widget(p, rects[y][x]);
