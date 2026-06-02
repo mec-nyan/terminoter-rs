@@ -3,6 +3,7 @@ use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Layout},
     style::Style,
+    text::Line,
     widgets::{Block, Borders, Padding, Paragraph, Wrap},
 };
 
@@ -13,6 +14,7 @@ pub struct App {
     current_note: usize,
     _current_page: usize,
     quit: bool,
+    show_debuggin_info: bool,
 }
 
 impl App {
@@ -22,6 +24,7 @@ impl App {
             current_note: 0,
             _current_page: 0,
             quit: false,
+            show_debuggin_info: false,
         };
     }
 
@@ -51,6 +54,7 @@ impl App {
             event::KeyCode::Char('q') | event::KeyCode::Esc => self.quit = true,
             event::KeyCode::Char('j') => self.next(),
             event::KeyCode::Char('k') => self.previous(),
+            event::KeyCode::Char('d') => self.toggle_debuggin_info(),
             _ => {}
         }
     }
@@ -67,6 +71,10 @@ impl App {
         if self.current_note > 0 {
             self.current_note -= 1;
         }
+    }
+
+    fn toggle_debuggin_info(&mut self) {
+        self.show_debuggin_info = !self.show_debuggin_info;
     }
 
     fn render(&self, frame: &mut Frame) {
@@ -133,12 +141,34 @@ impl App {
                             .borders(Borders::ALL)
                             .border_type(ratatui::widgets::BorderType::Rounded)
                             .padding(Padding::proportional(1))
-                            .title(format!(" #{} ({},{}) ", i + 1, x, y)),
+                            .title(format!(" #{} ", i + 1)),
                     )
                     .style(note_style)
                     .wrap(Wrap { trim: true });
 
-                frame.render_widget(p, rects[y][x]);
+                let rect = rects[y][x];
+
+                frame.render_widget(&p, rect);
+
+                if self.show_debuggin_info {
+                    let lines = p.line_count(rect.width);
+                    let p_rows = rect.width;
+                    let p_cols = rect.height;
+
+                    let bottom_line = Layout::new(
+                        ratatui::layout::Direction::Vertical,
+                        vec![Constraint::Fill(1), Constraint::Length(1)],
+                    )
+                    .horizontal_margin(4)
+                    .split(rect);
+
+                    let info = Line::raw(format!(
+                        " i: {}l ({}x{}) ({},{}) ",
+                        lines, p_cols, p_rows, x, y
+                    ));
+
+                    frame.render_widget(info, bottom_line[1]);
+                }
             }
         }
     }
