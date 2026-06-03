@@ -7,7 +7,7 @@ pub struct Note {
     pub content: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Data {
     // TODO: Make private, provide required methods.
     pub notes: Vec<Note>,

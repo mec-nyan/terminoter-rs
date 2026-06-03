@@ -1,4 +1,4 @@
-use crossterm::event::{self, KeyEvent, KeyEventKind};
+use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Layout},
@@ -7,13 +7,33 @@ use ratatui::{
     widgets::{Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarState, Wrap},
 };
 
-use crate::notes::{Data, save_data};
+use crate::notes::{Data, Note, save_data};
+
+#[derive(PartialEq)]
+enum Mode {
+    Normal,
+    Insert,
+    Delete,
+}
+
+enum SaveOnEnter {
+    None,
+    Once,
+    Save,
+}
 
 pub struct App {
-    data: Data,
-    _current_page: usize,
+    data_new: Data,
+    data_old: Data,
+
+    mode: Mode,
+    save_on_enter: SaveOnEnter,
+
+    tmp_content: String,
+
     quit: bool,
     save_on_quit: bool,
+
     // TODO: Remove on production builds once the app reaches a usable state.
     show_debugging_info: bool,
 
@@ -26,8 +46,11 @@ pub struct App {
 impl App {
     pub fn new(data: Data) -> Self {
         return Self {
-            data,
-            _current_page: 0,
+            data_new: data.clone(),
+            data_old: data,
+            mode: Mode::Normal,
+            save_on_enter: SaveOnEnter::None,
+            tmp_content: String::new(),
             quit: false,
             // TODO: Add a confirmation dialog to save the changes.
             save_on_quit: true,
@@ -42,15 +65,24 @@ impl App {
             terminal.draw(|f| {
                 self.render(f);
             })?;
+
             // For our usecase, blocking I/O is just what we need.
             self.handle_events()?;
         }
 
-        if self.save_on_quit {
-            save_data("data.json", &self.data)?;
+        // Don't overwrite the file if nothing has changed.
+        // Sadly, we'll still need to write if only the current note index has changed,
+        // in order to preserve the application's state.
+        // TODO: If that's not useful (saving `current`), remove it.
+        if self.save_on_quit && self.has_changed() {
+            save_data("data.json", &self.data_new)?;
         }
 
         Ok(())
+    }
+
+    fn has_changed(&self) -> bool {
+        self.data_new != self.data_old
     }
 
     fn handle_events(&mut self) -> std::io::Result<()> {
@@ -64,16 +96,78 @@ impl App {
     }
 
     fn handle_keys(&mut self, ev: KeyEvent) {
-        match ev.code {
-            event::KeyCode::Char('q') | event::KeyCode::Esc => self.quit = true,
-            event::KeyCode::Char('j') => self.next(),
-            event::KeyCode::Char('k') => self.previous(),
-            // TODO: Use a more common keybinding (i.e. "ctrl+u" or "ctrl+p" etc).
-            event::KeyCode::Char('u') => self.up(),
-            event::KeyCode::Char('d') => self.down(),
-            event::KeyCode::Char('i') => self.toggle_debugging_info(),
-            _ => {}
+        match self.mode {
+            Mode::Normal => {
+                match ev.code {
+                    KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
+                    KeyCode::Char('j') => self.next(),
+                    KeyCode::Char('k') => self.previous(),
+                    // TODO: Use a more common keybinding (i.e. "ctrl+u" or "ctrl+p" etc).
+                    KeyCode::Char('u') => self.up(),
+                    KeyCode::Char('d') => self.down(),
+                    KeyCode::Char('i') => self.toggle_insert_mode(),
+                    KeyCode::Char('b') => self.toggle_debugging_info(),
+                    _ => {}
+                }
+            }
+            Mode::Insert => match ev.code {
+                // Exit insert mode and discard note.
+                // TODO: Add confirmation dialog.
+                KeyCode::Esc => self.discard(),
+                // Add new note to list of notes and go back to normal mode.
+                KeyCode::Enter => match self.save_on_enter {
+                    SaveOnEnter::None => {
+                        self.save_on_enter = SaveOnEnter::Once;
+                        self.tmp_content.push('\n');
+                    }
+                    SaveOnEnter::Once => {
+                        self.save_on_enter = SaveOnEnter::Save;
+                        self.tmp_content.push('\n');
+                    }
+                    SaveOnEnter::Save => {
+                        self.save_on_enter = SaveOnEnter::None;
+                        self.save_new_note();
+                    }
+                },
+                // Type the new note...
+                KeyCode::Backspace => {
+                    if self.tmp_content.len() > 0 {
+                        self.tmp_content.pop();
+                    }
+                }
+                KeyCode::Tab => {
+                    self.tmp_content.push('\t');
+                }
+                KeyCode::Char(c) => {
+                    if c.is_alphanumeric() || c.is_ascii_punctuation() || c == ' ' {
+                        self.tmp_content.push(c);
+                    }
+                }
+
+                _ => {}
+            },
+            Mode::Delete => {}
         }
+    }
+
+    fn toggle_insert_mode(&mut self) {
+        self.mode = Mode::Insert;
+    }
+
+    fn discard(&mut self) {
+        self.tmp_content.clear();
+        self.mode = Mode::Normal;
+    }
+
+    fn save_new_note(&mut self) {
+        self.mode = Mode::Normal;
+        // Remove last '\n'.
+        self.tmp_content.pop();
+        let new_note = Note {
+            content: self.tmp_content.clone(),
+        };
+        self.data_new.notes.push(new_note);
+        self.tmp_content.clear();
     }
 
     fn reset_offset(&mut self) {
@@ -82,9 +176,9 @@ impl App {
     }
 
     fn next(&mut self) {
-        if !self.data.notes.is_empty() {
-            if self.data.current < self.data.notes.len() - 1 {
-                self.data.current += 1;
+        if !self.data_new.notes.is_empty() {
+            if self.data_new.current < self.data_new.notes.len() - 1 {
+                self.data_new.current += 1;
             }
         }
         // NOTE: Once each note saves its own offset, remove this code:
@@ -92,8 +186,8 @@ impl App {
     }
 
     fn previous(&mut self) {
-        if self.data.current > 0 {
-            self.data.current -= 1;
+        if self.data_new.current > 0 {
+            self.data_new.current -= 1;
         }
         // NOTE: Once each note saves its own offset, remove this code:
         self.reset_offset();
@@ -146,7 +240,7 @@ impl App {
 
         frame.render_widget(title, rows[0]);
 
-        if self.data.notes.is_empty() {
+        if self.data_new.notes.is_empty() {
             // TODO: Show a help message here.
             let p = Paragraph::new("There are no notes ...")
                 .block(
@@ -160,24 +254,26 @@ impl App {
 
             frame.render_widget(p, rects[0][0]);
         } else {
-            for i in 0..self.data.notes.len() {
+            for i in 0..self.data_new.notes.len() {
                 // TODO: Don't use magic numbers!
                 let y = i / 3;
                 let x = i - (y * 3);
 
-                let note_style = if i == self.data.current {
+                let note_style = if self.mode == Mode::Insert {
+                    Style::new().dark_gray()
+                } else if i == self.data_new.current {
                     Style::new().yellow()
                 } else {
                     Style::new().blue()
                 };
 
-                let offset = if i == self.data.current {
+                let offset = if i == self.data_new.current {
                     (self.offset_y, self.offset_x)
                 } else {
                     (0, 0)
                 };
 
-                let p = Paragraph::new(self.data.notes[i].content.clone())
+                let p = Paragraph::new(self.data_new.notes[i].content.clone())
                     .block(
                         Block::new()
                             .borders(Borders::ALL)
@@ -237,6 +333,35 @@ impl App {
                     frame.render_widget(info, bottom_line[1]);
                 }
             }
+        }
+
+        // TODO: This is just a draft implementation.
+        if self.mode == Mode::Insert {
+            let note_number = self.data_new.notes.len();
+            let y = note_number / 3;
+            let x = note_number - (y * 3);
+
+            let note_style = Style::new().green();
+            let p = Paragraph::new(self.tmp_content.clone() + "_")
+                .block(
+                    Block::new()
+                        .borders(Borders::ALL)
+                        .border_type(ratatui::widgets::BorderType::Rounded)
+                        .padding(Padding {
+                            left: 2,
+                            right: 2,
+                            top: 1,
+                            bottom: 1,
+                        })
+                        .title(format!(" (temp) #{} ", note_number + 1)),
+                )
+                .style(note_style)
+                // .scroll(offset)
+                .wrap(Wrap { trim: false });
+
+            let rect = rects[y][x];
+
+            frame.render_widget(&p, rect);
         }
     }
 }
