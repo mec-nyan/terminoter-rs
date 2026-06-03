@@ -14,7 +14,11 @@ pub struct App {
     current_note: usize,
     _current_page: usize,
     quit: bool,
-    show_debuggin_info: bool,
+    show_debugging_info: bool,
+    // TODO: This will be stored in the note's "metadata" so we can keep each note's state
+    // independently.
+    offset_x: u16,
+    offset_y: u16,
 }
 
 impl App {
@@ -24,7 +28,9 @@ impl App {
             current_note: 0,
             _current_page: 0,
             quit: false,
-            show_debuggin_info: false,
+            show_debugging_info: false,
+            offset_x: 0,
+            offset_y: 0,
         };
     }
 
@@ -54,9 +60,17 @@ impl App {
             event::KeyCode::Char('q') | event::KeyCode::Esc => self.quit = true,
             event::KeyCode::Char('j') => self.next(),
             event::KeyCode::Char('k') => self.previous(),
-            event::KeyCode::Char('d') => self.toggle_debuggin_info(),
+            // TODO: Use a more common keybinding (i.e. "ctrl+u" or "ctrl+p" etc).
+            event::KeyCode::Char('u') => self.up(),
+            event::KeyCode::Char('d') => self.down(),
+            event::KeyCode::Char('i') => self.toggle_debugging_info(),
             _ => {}
         }
+    }
+
+    fn reset_offset(&mut self) {
+        self.offset_x = 0;
+        self.offset_y = 0;
     }
 
     fn next(&mut self) {
@@ -65,16 +79,30 @@ impl App {
                 self.current_note += 1;
             }
         }
+        // NOTE: Once each note saves its own offset, remove this code:
+        self.reset_offset();
     }
 
     fn previous(&mut self) {
         if self.current_note > 0 {
             self.current_note -= 1;
         }
+        // NOTE: Once each note saves its own offset, remove this code:
+        self.reset_offset();
     }
 
-    fn toggle_debuggin_info(&mut self) {
-        self.show_debuggin_info = !self.show_debuggin_info;
+    fn up(&mut self) {
+        self.offset_y += 1;
+    }
+
+    fn down(&mut self) {
+        if self.offset_y > 0 {
+            self.offset_y -= 1;
+        }
+    }
+
+    fn toggle_debugging_info(&mut self) {
+        self.show_debugging_info = !self.show_debugging_info;
     }
 
     fn render(&self, frame: &mut Frame) {
@@ -135,6 +163,12 @@ impl App {
                     Style::new().blue()
                 };
 
+                let offset = if i == self.current_note {
+                    (self.offset_y, self.offset_x)
+                } else {
+                    (0, 0)
+                };
+
                 let p = Paragraph::new(self.data.notes[i].content.clone())
                     .block(
                         Block::new()
@@ -149,6 +183,7 @@ impl App {
                             .title(format!(" #{} ", i + 1)),
                     )
                     .style(note_style)
+                    .scroll(offset)
                     .wrap(Wrap { trim: false });
 
                 let rect = rects[y][x];
@@ -172,13 +207,13 @@ impl App {
                         vertical: 2,
                     });
 
-                    let mut bar_state =
-                        ScrollbarState::new(lines - (p_rows - 4) as usize).position(0);
+                    let mut bar_state = ScrollbarState::new(lines - (p_rows - 4) as usize)
+                        .position(self.offset_y.into());
 
                     frame.render_stateful_widget(scrollbar, bar_rect, &mut bar_state);
                 }
 
-                if self.show_debuggin_info {
+                if self.show_debugging_info {
                     let bottom_line = Layout::new(
                         ratatui::layout::Direction::Vertical,
                         vec![Constraint::Fill(1), Constraint::Length(1)],
