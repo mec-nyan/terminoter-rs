@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Layout},
     style::Style,
     text::Line,
-    widgets::{Block, Borders, Padding, Paragraph, Wrap},
+    widgets::{Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarState, Wrap},
 };
 
 use crate::notes::Data;
@@ -140,21 +140,45 @@ impl App {
                         Block::new()
                             .borders(Borders::ALL)
                             .border_type(ratatui::widgets::BorderType::Rounded)
-                            .padding(Padding::proportional(1))
+                            .padding(Padding {
+                                left: 2,
+                                right: 2,
+                                top: 1,
+                                bottom: 1,
+                            })
                             .title(format!(" #{} ", i + 1)),
                     )
                     .style(note_style)
-                    .wrap(Wrap { trim: true });
+                    .wrap(Wrap { trim: false });
 
                 let rect = rects[y][x];
 
                 frame.render_widget(&p, rect);
 
-                if self.show_debuggin_info {
-                    let lines = p.line_count(rect.width);
-                    let p_rows = rect.width;
-                    let p_cols = rect.height;
+                // Show a scrollbar if the content don't fit on the rect.
+                let lines = p.line_count(rect.width);
+                let p_rows = rect.height;
+                let p_cols = rect.width;
 
+                if lines >= p_rows as usize {
+                    let scrollbar =
+                        Scrollbar::new(ratatui::widgets::ScrollbarOrientation::VerticalRight)
+                            .begin_symbol(None)
+                            .end_symbol(None)
+                            .track_style(Style::new().black());
+
+                    let bar_rect = rect.inner(ratatui::layout::Margin {
+                        horizontal: 0,
+                        vertical: 2,
+                    });
+
+                    let mut bar_state =
+                        ScrollbarState::new(lines - (p_rows - 4) as usize).position(0);
+
+                    frame.render_stateful_widget(scrollbar, bar_rect, &mut bar_state);
+                }
+
+                if self.show_debuggin_info {
                     let bottom_line = Layout::new(
                         ratatui::layout::Direction::Vertical,
                         vec![Constraint::Fill(1), Constraint::Length(1)],
