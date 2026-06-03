@@ -7,14 +7,16 @@ use ratatui::{
     widgets::{Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarState, Wrap},
 };
 
-use crate::notes::Data;
+use crate::notes::{Data, save_data};
 
 pub struct App {
     data: Data,
-    current_note: usize,
     _current_page: usize,
     quit: bool,
+    save_on_quit: bool,
+    // TODO: Remove on production builds once the app reaches a usable state.
     show_debugging_info: bool,
+
     // TODO: This will be stored in the note's "metadata" so we can keep each note's state
     // independently.
     offset_x: u16,
@@ -25,9 +27,10 @@ impl App {
     pub fn new(data: Data) -> Self {
         return Self {
             data,
-            current_note: 0,
             _current_page: 0,
             quit: false,
+            // TODO: Add a confirmation dialog to save the changes.
+            save_on_quit: true,
             show_debugging_info: false,
             offset_x: 0,
             offset_y: 0,
@@ -42,6 +45,11 @@ impl App {
             // For our usecase, blocking I/O is just what we need.
             self.handle_events()?;
         }
+
+        if self.save_on_quit {
+            save_data("data.json", &self.data)?;
+        }
+
         Ok(())
     }
 
@@ -75,8 +83,8 @@ impl App {
 
     fn next(&mut self) {
         if !self.data.notes.is_empty() {
-            if self.current_note < self.data.notes.len() - 1 {
-                self.current_note += 1;
+            if self.data.current < self.data.notes.len() - 1 {
+                self.data.current += 1;
             }
         }
         // NOTE: Once each note saves its own offset, remove this code:
@@ -84,8 +92,8 @@ impl App {
     }
 
     fn previous(&mut self) {
-        if self.current_note > 0 {
-            self.current_note -= 1;
+        if self.data.current > 0 {
+            self.data.current -= 1;
         }
         // NOTE: Once each note saves its own offset, remove this code:
         self.reset_offset();
@@ -157,13 +165,13 @@ impl App {
                 let y = i / 3;
                 let x = i - (y * 3);
 
-                let note_style = if i == self.current_note {
+                let note_style = if i == self.data.current {
                     Style::new().yellow()
                 } else {
                     Style::new().blue()
                 };
 
-                let offset = if i == self.current_note {
+                let offset = if i == self.data.current {
                     (self.offset_y, self.offset_x)
                 } else {
                     (0, 0)
