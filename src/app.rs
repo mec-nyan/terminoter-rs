@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Layout},
     style::Style,
     text::Line,
-    widgets::{Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarState, Wrap},
+    widgets::{Block, Borders, Clear, Padding, Paragraph, Scrollbar, ScrollbarState, Wrap},
 };
 
 use crate::notes::{Data, Note, save_data};
@@ -16,18 +16,11 @@ enum Mode {
     Delete,
 }
 
-enum SaveOnEnter {
-    None,
-    Once,
-    Save,
-}
-
 pub struct App {
     data_new: Data,
     data_old: Data,
 
     mode: Mode,
-    save_on_enter: SaveOnEnter,
 
     tmp_content: String,
 
@@ -49,7 +42,6 @@ impl App {
             data_new: data.clone(),
             data_old: data,
             mode: Mode::Normal,
-            save_on_enter: SaveOnEnter::None,
             tmp_content: String::new(),
             quit: false,
             // TODO: Add a confirmation dialog to save the changes.
@@ -105,30 +97,27 @@ impl App {
                     // TODO: Use a more common keybinding (i.e. "ctrl+u" or "ctrl+p" etc).
                     KeyCode::Char('u') => self.up(),
                     KeyCode::Char('d') => self.down(),
-                    KeyCode::Char('i') => self.toggle_insert_mode(),
+                    KeyCode::Char('i') => self.mode = Mode::Insert,
+                    KeyCode::Char('x') => self.mode = Mode::Delete,
                     KeyCode::Char('b') => self.toggle_debugging_info(),
                     _ => {}
                 }
             }
+
             Mode::Insert => match ev.code {
                 // Exit insert mode and discard note.
                 // TODO: Add confirmation dialog.
                 KeyCode::Esc => self.discard(),
                 // Add new note to list of notes and go back to normal mode.
-                KeyCode::Enter => match self.save_on_enter {
-                    SaveOnEnter::None => {
-                        self.save_on_enter = SaveOnEnter::Once;
-                        self.tmp_content.push('\n');
-                    }
-                    SaveOnEnter::Once => {
-                        self.save_on_enter = SaveOnEnter::Save;
-                        self.tmp_content.push('\n');
-                    }
-                    SaveOnEnter::Save => {
-                        self.save_on_enter = SaveOnEnter::None;
+                KeyCode::Enter => {
+                    // Save en <enter><enter><enter>
+                    // so we can put empty lines in our notes.
+                    if self.tmp_content.ends_with("\n\n") {
                         self.save_new_note();
+                    } else {
+                        self.tmp_content.push('\n');
                     }
-                },
+                }
                 // Type the new note...
                 KeyCode::Backspace => {
                     if self.tmp_content.len() > 0 {
@@ -144,14 +133,19 @@ impl App {
                     }
                 }
 
-                _ => {}
+                _ => {
+                    // TODO: Handle other characters (unicode, emoji, etc).
+                }
             },
-            Mode::Delete => {}
-        }
-    }
 
-    fn toggle_insert_mode(&mut self) {
-        self.mode = Mode::Insert;
+            Mode::Delete => {
+                match ev.code {
+                    KeyCode::Enter => self.delete_note(),
+                    _ => {}
+                }
+                self.mode = Mode::Normal;
+            }
+        }
     }
 
     fn discard(&mut self) {
@@ -162,12 +156,26 @@ impl App {
     fn save_new_note(&mut self) {
         self.mode = Mode::Normal;
         // Remove last '\n'.
-        self.tmp_content.pop();
-        let new_note = Note {
-            content: self.tmp_content.clone(),
-        };
-        self.data_new.notes.push(new_note);
-        self.tmp_content.clear();
+        let _ = self.tmp_content.trim_end();
+        if self.tmp_content.len() > 0 {
+            let new_note = Note {
+                content: self.tmp_content.clone(),
+            };
+            self.data_new.notes.push(new_note);
+            // Focus the last added note.
+            self.data_new.current = self.data_new.notes.len() - 1;
+            self.tmp_content.clear();
+        }
+    }
+
+    // TODO: Should we check for errors?
+    fn delete_note(&mut self) {
+        if self.data_new.notes.len() > self.data_new.current {
+            self.data_new.notes.remove(self.data_new.current);
+            if self.data_new.current > 0 {
+                self.data_new.current -= 1;
+            }
+        }
     }
 
     fn reset_offset(&mut self) {
@@ -262,7 +270,11 @@ impl App {
                 let note_style = if self.mode == Mode::Insert {
                     Style::new().dark_gray()
                 } else if i == self.data_new.current {
-                    Style::new().yellow()
+                    if self.mode == Mode::Delete {
+                        Style::new().red()
+                    } else {
+                        Style::new().yellow()
+                    }
                 } else {
                     Style::new().blue()
                 };
@@ -362,6 +374,44 @@ impl App {
             let rect = rects[y][x];
 
             frame.render_widget(&p, rect);
+        }
+
+        if self.mode == Mode::Delete {
+            let outer_layout = Layout::new(
+                ratatui::layout::Direction::Vertical,
+                vec![
+                    Constraint::Fill(1),
+                    Constraint::Length(7),
+                    Constraint::Fill(1),
+                ],
+            )
+            .split(frame.area());
+
+            let popup_layout = Layout::new(
+                ratatui::layout::Direction::Horizontal,
+                vec![
+                    Constraint::Fill(1),
+                    Constraint::Length(50),
+                    Constraint::Fill(1),
+                ],
+            )
+            .split(outer_layout[1]);
+
+            let p = Paragraph::new(
+                "Are you sure you want to delete this note?\n\nThis cannot be undone.",
+            )
+            .centered()
+            .block(
+                Block::new()
+                    .padding(Padding::uniform(1))
+                    .borders(Borders::ALL)
+                    .border_type(ratatui::widgets::BorderType::Rounded),
+            )
+            .wrap(Wrap { trim: true })
+            .style(Style::new().red());
+
+            frame.render_widget(Clear, popup_layout[1]);
+            frame.render_widget(p, popup_layout[1]);
         }
     }
 }
